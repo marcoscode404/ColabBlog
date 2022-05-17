@@ -6,7 +6,17 @@
   height: var(--header-height);
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 5rem 13.125rem 4rem;
-
+  padding: 2.5rem 13.125rem 4rem;
+  font-size: 2.5rem;
   cursor: pointer;
+
+  a {
+    color: #0AA573;
+
+
+
+    span{
+      color: #F9FAFB;
+    }
+  }
 }
