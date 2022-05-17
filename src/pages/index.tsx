@@ -1,19 +1,16 @@
-/* eslint-disable no-param-reassign */
-/* eslint-disable no-return-assign */
-/* eslint-disable react/no-danger */
+import { useEffect, useState } from 'react';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
-import { FiCalendar, FiClock, FiUser } from 'react-icons/fi';
-import Prismic from '@prismicio/client';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import Link from 'next/link';
-import { ReactElement, useState } from 'react';
+import Prismic from '@prismicio/client';
+
+import { FiUser, FiCalendar } from 'react-icons/fi';
 import { getPrismicClient } from '../services/prismic';
 
 import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
-import Header from '../components/Header';
+import { formatDate } from '../utils/formatDate';
+import { LeavePreviewModeButton } from '../components/LeavePreviewModeButton';
 
 interface Post {
   uid?: string;
@@ -22,13 +19,6 @@ interface Post {
     title: string;
     subtitle: string;
     author: string;
-    readTime: number;
-    content: {
-      heading: string;
-      body: {
-        text: string;
-      }[];
-    }[];
   };
 }
 
@@ -42,170 +32,122 @@ interface HomeProps {
   preview: boolean;
 }
 
+interface PrismicDocument {
+  uid: string;
+  first_publication_date: string;
+  data: {
+    author: string;
+    title: string;
+    subtitle: string;
+  };
+}
+
+function PrismicDocumentToPost(document: PrismicDocument[]): Post[] {
+  const posts = document.map(post => {
+    return {
+      uid: post.uid,
+      first_publication_date: post.first_publication_date,
+      data: {
+        author: post.data.author,
+        subtitle: post.data.subtitle,
+        title: post.data.title,
+      },
+    };
+  });
+  return posts;
+}
+
 export default function Home({
   postsPagination,
   preview,
-}: HomeProps): ReactElement {
-  function getReadTime(item: Post): number {
-    const totalWords = item.data.content.reduce((total, contentItem) => {
-      total += contentItem.heading.split(' ').length;
+}: HomeProps): JSX.Element {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [prismicNextPage, setPrismicNextPage] = useState('');
 
-      const words = contentItem.body.map(i => i.text.split(' ').length);
-      words.map(word => (total += word));
-      return total;
-    }, 0);
-    return Math.ceil(totalWords / 200);
-  }
+  useEffect(() => {
+    setPosts(postsPagination.results);
+    setPrismicNextPage(postsPagination.next_page);
+  }, [postsPagination]);
 
-  const formattedPost = postsPagination.results.map(post => {
-    const readTime = getReadTime(post);
-
-    return {
-      ...post,
-      data: {
-        ...post.data,
-        readTime,
-      },
-      first_publication_date: format(
-        new Date(post.first_publication_date),
-        'dd MMM yyyy',
-        {
-          locale: ptBR,
-        }
-      ),
-    };
-  });
-
-  const [posts, setPosts] = useState<Post[]>(formattedPost);
-  const [nextPage, setNextPage] = useState(postsPagination.next_page);
-  const [currentPage, setCurrentPage] = useState(1);
-
-  async function handleNextPage(): Promise<void> {
-    if (currentPage !== 1 && nextPage === null) {
-      return;
-    }
-
-    const postsResults = await fetch(`${nextPage}`).then(response =>
-      response.json()
-    );
-    setNextPage(postsResults.next_page);
-    setCurrentPage(postsResults.page);
-
-    const newPosts = postsResults.results.map((post: Post) => {
-      const readTime = getReadTime(post);
-
-      return {
-        uid: post.uid,
-        first_publication_date: format(
-          new Date(post.first_publication_date),
-          'dd MMM yyyy',
-          {
-            locale: ptBR,
-          }
-        ),
-        data: {
-          title: post.data.title,
-          subtitle: post.data.subtitle,
-          author: post.data.author,
-          readTime,
-        },
-      };
-    });
-
-    setPosts([...posts, ...newPosts]);
+  function handleGetMorePost(): void {
+    fetch(prismicNextPage)
+      .then(response => response.json())
+      .then(data => {
+        setPrismicNextPage(data.next_page);
+        const newPosts = PrismicDocumentToPost(
+          data.results as PrismicDocument[]
+        );
+        setPosts([...posts, ...newPosts]);
+      });
   }
 
   return (
     <>
       <Head>
-        <title>Home | ColabDevs</title>
+        <title>Home | spacetraveling</title>
       </Head>
-
-      <main className={commonStyles.container}>
-        <Header />
-
-        <div className={styles.posts}>
-          {posts.map(post => (
-            <Link href={`/post/${post.uid}`} key={post.uid}>
-              <a className={styles.post}>
-                <strong>{post.data.title}</strong>
-                <p>{post.data.subtitle}</p>
-                <ul>
-                  <li>
-                    <FiCalendar />
-                    {post.first_publication_date}
-                  </li>
-                  <li>
-                    <FiUser />
-                    {post.data.author}
-                  </li>
-                  <li>
-                    <FiClock />
-                    {`${post.data.readTime} min`}
-                  </li>
-                </ul>
+      <main className={commonStyles.pageContainer}>
+        {posts.map(post => (
+          <div className={styles.postItem} key={post.uid}>
+            <Link href={`/post/${post.uid}`}>
+              <a>
+                <strong className={styles.postTitle}>{post.data.title}</strong>
               </a>
             </Link>
-          ))}
-
-          {nextPage && (
-            <button type="button" onClick={handleNextPage}>
+            <span className={styles.postSubtitle}>{post.data.subtitle}</span>
+            <div className={styles.postInfos}>
+              <div>
+                <FiCalendar />
+                <span>{formatDate(post.first_publication_date)}</span>
+              </div>
+              <div>
+                <FiUser />
+                <span>{post.data.author}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+        {prismicNextPage && (
+          <div className={styles.actionsContainer}>
+            <button type="button" onClick={handleGetMorePost}>
               Carregar mais posts
             </button>
-          )}
-        </div>
-
-        {preview && (
-          <aside>
-            <Link href="/api/exit-preview">
-              <a className={commonStyles.preview}>Sair do modo Preview</a>
-            </Link>
-          </aside>
+          </div>
         )}
+        {preview && <LeavePreviewModeButton />}
       </main>
     </>
   );
 }
 
-export const getStaticProps: GetStaticProps = async ({ preview = false }) => {
+export const getStaticProps: GetStaticProps<HomeProps> = async ({
+  preview = false,
+  previewData,
+}) => {
   const prismic = getPrismicClient();
-
   const postsResponse = await prismic.query(
-    [Prismic.Predicates.at('document.type', 'posts')],
+    [Prismic.predicates.at('document.type', 'posts')],
     {
+      fetch: ['posts.title', 'posts.subtitle', 'posts.author'],
+      orderings: '[document.first_publication_date desc]',
       pageSize: 3,
-      orderings: '[document.last_publication_date desc]',
+      page: 1,
+      ref: previewData?.ref ?? null,
     }
   );
 
-  const posts = postsResponse.results.map(post => {
-    return {
-      uid: post.uid,
-      first_publication_date: post.first_publication_date,
-      data: {
-        title: post.data.title,
-        subtitle: post.data.subtitle,
-        author: post.data.author,
-        content: post.data.content.map(content => {
-          return {
-            heading: content.heading,
-            body: [...content.body],
-          };
-        }),
-      },
-    };
-  });
-
-  const postsPagination = {
-    next_page: postsResponse.next_page,
-    results: posts,
-  };
+  const posts: Post[] = PrismicDocumentToPost(
+    postsResponse.results as PrismicDocument[]
+  );
 
   return {
     props: {
-      postsPagination,
+      postsPagination: {
+        next_page: postsResponse.next_page,
+        results: posts,
+      },
       preview,
     },
-    revalidate: 1800,
+    revalidate: 2 * 60 * 60, // 2 hours
   };
 };
